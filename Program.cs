@@ -1,23 +1,86 @@
 using System.Reflection;
+using System.Security.Cryptography.X509Certificates;
 
-var assembly = Assembly.LoadFrom("data/AltV.Net.dll");
+const string serverPath = "docs/api/server";
+
+var assembly = Assembly.LoadFrom("data/server/AltV.Net.dll");
 Console.WriteLine("Loaded AltV.Net.dll");
 
-if (!Directory.Exists("docs/api"))
-  Directory.CreateDirectory("docs/api");
-
-foreach (var type in assembly.GetTypes().Where(x => x.IsPublic && x.Module.ToString().Contains("AltV.Net.")))
+if (!Directory.Exists(serverPath))
 {
-  var dir = "docs/api/" + type.Namespace + "/" + type.Name;
+  Directory.CreateDirectory(serverPath);
+}
+else
+{
+  Directory.Delete(serverPath, true);
+  Directory.CreateDirectory(serverPath);
+}
+
+/*
+ * TODO:
+ * - Simple names for types
+ * - Show Namespace and class at top
+ * - "Pinning" Classes in docs
+ * - Overloaded methods in one file
+ * - Only show properties and method that aren't inherited and link inherited ones to correct page
+ * - Show static for methods and properties
+ * - Handle Enums
+ * - Handle Class fields
+ * - Namespace Tree as index page per namespace
+ */
+
+var indexText = "";
+foreach (var type in assembly.GetTypes().Where(x => x.IsPublic && !x.IsSpecialName && x.Module.ToString().Contains("AltV.Net.")))
+{
+  var namespaceString = type.Namespace?.Replace(".", "_");
+  var dir = serverPath + "/" + namespaceString + "/" + type.Name;
   if (!Directory.Exists(dir))
     Directory.CreateDirectory(dir);
 
-  foreach (var property in type.GetProperties().Where(x => !x.IsSpecialName))
+  // Create index page with constructor information
+ var classFileName = dir + "/index.md";
+ var classFile = File.CreateText(classFileName);
+ var classText = $@"---
+title: {type.Name}
+order: 0
+---
+
+# {{{{ $frontmatter.title }}}}
+
+## Properties
+";    
+  foreach (var property in type.GetProperties().Where(x => (x.GetMethod?.IsPublic == true || x.SetMethod?.IsPublic == true) 
+                                                           &&!x.IsSpecialName))
+  {
+    classText += $"- [{property.Name}]({property.Name})\n";
+  }
+
+  classText += $@"
+
+## Methods
+";
+
+  foreach (var method in type.GetMethods().Where(x => x.IsPublic && !x.IsSpecialName))
+  {
+    classText += $"- [{method.Name}]({method.Name})\n";
+  }
+  
+  classFile.Write(classText);
+  classFile.Flush();
+  classFile.Close();
+
+  var linkString = namespaceString + "/" + type.Name + "/index.html";
+  indexText += $"- <a href=\"{linkString}\" target=\"_self\" rel=\"noreferrer\">{type.Namespace}.{type.Name}</a>\n";
+  Console.WriteLine(classFileName);
+
+  // create page for each property per class
+  foreach (var property in type.GetProperties().Where(x => (x.GetMethod?.IsPublic == true || x.SetMethod?.IsPublic == true) 
+                                                           && !x.IsSpecialName))
   {
     var propertyString = property.PropertyType + " " + property.Name + " { ";
-    if (property.CanRead)
+    if (property.GetMethod?.IsPublic == true)
       propertyString += "get; ";
-    if (property.CanWrite)
+    if (property.SetMethod?.IsPublic == true)
       propertyString += "set; ";
     
     propertyString += "}";
@@ -37,7 +100,7 @@ order: 0
 
 ## Function Definition
 
-```cs
+```c#
 {propertyString}
 ```
 
@@ -51,6 +114,7 @@ order: 0
     file.Close();
   }
   
+  // create page for each method per class
   foreach(var method in type.GetMethods().Where(x => x.IsPublic && !x.IsSpecialName))
   {
     var paramString = "";
@@ -93,7 +157,7 @@ order: 0
 
 ## Function Definition
 
-```cs
+```c#
 {methodString}
 ```
 
@@ -114,3 +178,10 @@ order: 0
     file.Close();
   }
 }
+
+
+var indexFilePath = serverPath + "/index.md";
+var indexFile = File.CreateText(indexFilePath);
+indexFile.Write(indexText);
+indexFile.Flush();
+indexFile.Close();
